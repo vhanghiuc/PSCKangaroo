@@ -337,10 +337,12 @@ The original PSCKangaroo architecture used sequential TRAP/HUNT phases — fill 
   - Tools / AI assistance: Anthropic Claude (pair-programming for design, debugging, documentation).
 
 ## See also
-   
-   [mr_blackwell](https://github.com/pscamillo/mr_blackwell) — Native Miller-Rabin GPU kernel for Blackwell SM 12.0.
-## License
 
+[mr_blackwell](https://github.com/pscamillo/mr_blackwell) — Native Miller-Rabin GPU kernel for Blackwell SM 12.0.
+
+[beal_bigint](https://github.com/pscamillo/beal_bigint) — GPU search for Beal conjecture counterexamples using the by-C^z parametrization.
+
+## License
 
 GPLv3 — see [LICENSE](LICENSE). Derivative work of [RCKangaroo](https://github.com/RetiredC/RCKangaroo).
 
