@@ -334,6 +334,7 @@ The original PSCKangaroo architecture used sequential TRAP/HUNT phases — fill 
 - **[JeanLucPons](https://github.com/JeanLucPons)** — Foundational Kangaroo/VanitySearch/BSGS implementations.
 - **kTimesG** — Critical feedback on endomorphism/cheap point/XDP that led to the v57 cleanup.
 - **pscamillo** — Concurrent mode (v59), W-W buffer (v58), ALL-TAME mode, 16-byte compact entries, async BSGS resolver, checkpoint system, table freeze, `-ramlimit`.
+  - Tools / AI assistance: Anthropic Claude (pair-programming for design, debugging, documentation).
 
 ## See also
    
