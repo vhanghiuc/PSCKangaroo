@@ -115,15 +115,21 @@ typedef char i8;
 		// v52: Reverted to 24 (original). GroupCnt=200 caused 12KB register spill/thread
 		//       and 6MB spill per SM — catastrophic L1 cache thrashing.
 		//       GroupCnt=24: 512B spill fits in L1 (128KB). Speed: 2.7→3.1+ GKeys/s
+		// v59: Increased default to 48 after empirical sweep on RTX 5070 (SM 12.0).
+		//       Tested values {12, 16, 24, 32, 48, 56, 64} × OCCUPANCY {1, 2}.
+		//       PNT=48 + OCC=1: 0 register spill, 166 regs/thread, ~3.33 GKeys/s
+		//       (+27% over PNT=24 baseline). 48 = 16×3 aligns well with warp size.
+		//       PNT=64 marginally worse (-1.3%); PNT=56 clearly worse (-5.4%, not 16-aligned).
+		//       Other GPUs may have different optima — use bench_psck.sh to tune.
 		#ifndef V45_PNT_GROUP_CNT
-		#define V45_PNT_GROUP_CNT	24
+		#define V45_PNT_GROUP_CNT	48
 		#endif
 		#define PNT_GROUP_CNT		V45_PNT_GROUP_CNT
 	#endif
 #else //CPU, fake values
 	#define BLOCK_SIZE			512
 	#ifndef V45_PNT_GROUP_CNT
-	#define V45_PNT_GROUP_CNT	24
+	#define V45_PNT_GROUP_CNT	48
 	#endif
 	#define PNT_GROUP_CNT		V45_PNT_GROUP_CNT
 #endif
