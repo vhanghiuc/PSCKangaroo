@@ -2510,7 +2510,7 @@ int main(int argc, char* argv[])
         printf("  -wwbuffer N      W-W buffer: N%% of RAM for WILD1-WILD2 detection (0-20, default: 0)\n");
         printf("                   Use 5 for ~25%% K improvement in ALL-TAME mode\n");
         printf("  -concurrent 1    v59: RC-style concurrent mode (33%%T+67%%W from second 1, t² growth)\n");
-        printf("  -groups N        Points per batch inversion (default: 24, max: 256)\n");
+        printf("  -groups N        (ignored - kernel uses compiled V45_PNT_GROUP_CNT, see defs.h)\n");
         printf("  -checkpoint N    Auto-save interval in hours (default: 4, 0=off)\n");
         printf("  -savefile <f>    Checkpoint filename\n");
         printf("  -loadwild <f>    Load checkpoint and resume\n");
