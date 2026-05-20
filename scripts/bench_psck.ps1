@@ -15,8 +15,13 @@
     Restores original defs.h and rebuilds at the end.
 
 .PARAMETER PSCKDir
-    Path to PSCKangaroo source directory. Defaults to %USERPROFILE%\Desafios\rck\PSCKangaroo
-    or environment variable PSCK_DIR.
+    Path to PSCKangaroo source directory. Defaults to the parent directory
+    of this script (i.e. the project root when the script lives in scripts/).
+    Override via -PSCKDir parameter or PSCK_DIR environment variable.
+
+.PARAMETER Gpu
+    GPU index to benchmark. If not provided via parameter or GPU_ID
+    environment variable, the script will prompt interactively.
 
 .PARAMETER OccList
     Space-separated list of V45_OCCUPANCY values to test. Default: "1 2"
@@ -34,7 +39,10 @@
     .\bench_psck.ps1
 
 .EXAMPLE
-    .\bench_psck.ps1 -PntList "24 48 64" -RunSeconds 120
+    .\bench_psck.ps1 -Gpu 1 -PntList "24 48 64" -RunSeconds 120
+
+.EXAMPLE
+    $env:GPU_ID=2; .\bench_psck.ps1
 
 .NOTES
     Requires Visual Studio 2019+ with C++/CUDA build tools, or
@@ -43,10 +51,11 @@
 #>
 
 param(
-    [string]$PSCKDir      = $(if ($env:PSCK_DIR)       { $env:PSCK_DIR }       else { Join-Path $env:USERPROFILE "Desafios\rck\PSCKangaroo" }),
-    [string]$OccList      = $(if ($env:OCC_LIST)       { $env:OCC_LIST }       else { "1 2" }),
-    [string]$PntList      = $(if ($env:PNT_LIST)       { $env:PNT_LIST }       else { "12 16 24 32 48" }),
-    [int]   $RunSeconds   = $(if ($env:RUN_SECONDS)    { [int]$env:RUN_SECONDS }    else { 90 }),
+    [string]$PSCKDir       = $(if ($env:PSCK_DIR)       { $env:PSCK_DIR }       else { (Resolve-Path (Join-Path $PSScriptRoot '..')).Path }),
+    [int]   $Gpu           = $(if ($env:GPU_ID)         { [int]$env:GPU_ID }    else { -1 }),
+    [string]$OccList       = $(if ($env:OCC_LIST)       { $env:OCC_LIST }       else { "1 2" }),
+    [string]$PntList       = $(if ($env:PNT_LIST)       { $env:PNT_LIST }       else { "12 16 24 32 48" }),
+    [int]   $RunSeconds    = $(if ($env:RUN_SECONDS)    { [int]$env:RUN_SECONDS }    else { 90 }),
     [int]   $WarmupSeconds = $(if ($env:WARMUP_SECONDS) { [int]$env:WARMUP_SECONDS } else { 30 })
 )
 
@@ -54,6 +63,16 @@ param(
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 $ErrorActionPreference = "Stop"
 $InvariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
+
+# Prompt for GPU index if not provided via parameter or environment variable
+if ($Gpu -eq -1) {
+    $gpuInput = Read-Host "GPU index to benchmark (default: 0)"
+    if ([string]::IsNullOrWhiteSpace($gpuInput)) {
+        $Gpu = 0
+    } else {
+        $Gpu = [int]$gpuInput
+    }
+}
 
 # ----------------------------------------------------------------------------
 # Locate MSBuild (try PATH first, then vswhere)
@@ -138,6 +157,7 @@ $estimatedMin = [math]::Round($TotalTests * ($RunSeconds + 45) / 60)
 PSCKangaroo Benchmark Sweep (Windows / PowerShell)
 ================================================================================
 Directory:       $PSCKDir
+GPU index:       $Gpu
 Output:          $OutDir
 OCC_LIST:        $OccList
 PNT_LIST:        $PntList
@@ -232,9 +252,9 @@ try {
             }
 
             # Run with timeout
-            Write-Host "    Running ${RunSeconds}s..."
+            Write-Host "    Running ${RunSeconds}s on GPU $Gpu..."
             $runArgs = @(
-                "-gpu", "0",
+                "-gpu", "$Gpu",
                 "-dp", "16",
                 "-range", "134",
                 "-pubkey", "02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16",
