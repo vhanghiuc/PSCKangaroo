@@ -219,9 +219,28 @@ The **SOTA method** (by RetiredCoder) uses equivalence classes and the negation 
 
 ## Per-GPU Tuning
 
-The default **`PNT_GROUP_CNT=48`** was empirically validated on RTX 5070 (Blackwell SM 12.0) and is a sensible value for modern Turing+ architectures. Other GPUs may benefit from a different setting.
+The default **`PNT_GROUP_CNT=48`** was empirically validated on RTX 5070 (Blackwell SM 12.0). The optimal value is **architecture-dependent**, primarily a function of the GPU's SM count:
 
-To find your GPU's optimum, use the included sweep script:
+- **Fewer SMs (≤48 CUs):** higher `PNT_GROUP_CNT` (32–48) wins because batch inversion amortization (one ModInv per N MulModPs) matters more when there's less raw parallelism to hide arithmetic cost.
+- **More SMs (≥70 CUs):** lower `PNT_GROUP_CNT` (24) wins because the SMs are already saturated and higher PNT only inflates register pressure and L2 traffic without adding throughput.
+
+### Confirmed optimal configurations
+
+| GPU | CUs | Best OCC | Best PNT | GKeys/s | Source |
+|---|---|---|---|---|---|
+| RTX 5060 Ti | 36 | 2 | 32 | 2.42 (stock) | [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) |
+| RTX 5070 | 48 | 1 | 48 | 3.33 (stock) | maintainer (v60 default) |
+| RTX 5070 Ti (Aorus Master) | 70 | 1 | 24 | 4.69 (stock) | [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) |
+| RTX 5070 Ti (Gigabyte OC) | 70 | 1 | 24 | 4.45 (stock) | [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) |
+
+Notes:
+- `PNT=12` triggers severe DP buffer overflow on GPUs faster than ~3 GKeys/s and should be avoided.
+- `OCC=2` helps on smaller GPUs (≤36 CUs); on larger ones it's within noise of `OCC=1`.
+- Undervolting costs ~3–4% throughput at the optimal config — reasonable trade for thermal headroom on long runs.
+
+### Finding your own optimum
+
+To benchmark your GPU, use the included sweep script:
 
 ```bash
 chmod +x scripts/bench_psck.sh
@@ -234,7 +253,9 @@ By default it tests `PNT_GROUP_CNT ∈ {12, 16, 24, 32, 48}` × `OCCUPANCY ∈ {
 OCC_LIST="1" PNT_LIST="32 48 56 64" ./scripts/bench_psck.sh
 ```
 
-If a configuration other than the default wins on your hardware by a meaningful margin, please open a [PR or Issue](https://github.com/pscamillo/PSCKangaroo/issues) with the results — would help build a per-architecture tuning table over time.
+On Windows, use `scripts/bench_psck.ps1` (PowerShell) — same logic, same environment-variable overrides.
+
+If a configuration other than those listed above wins on your hardware by a meaningful margin, please open a [PR or Issue](https://github.com/pscamillo/PSCKangaroo/issues) with the results — would help expand the per-architecture tuning table.
 
 ## Command-Line Options
 
@@ -304,9 +325,11 @@ The `.vcxproj` targets CUDA 12.8. If you have a different CUDA version, right-cl
 
 | GPU | Speed | Notes |
 |---|---|---|
-| RTX 5070 Ti (Blackwell) | ~4.5 GKeys/s | Confirmed by user (Windows, v59) |
+| RTX 5070 Ti (Blackwell, Aorus Master) | **~4.69 GKeys/s** | Confirmed by user [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) (Windows, PNT=24) |
+| RTX 5070 Ti (Blackwell, Gigabyte OC) | ~4.45 GKeys/s | Confirmed by user [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) (Windows, PNT=24) |
 | RTX 5070 (Blackwell) | **~3.3 GKeys/s** | Tested (Linux, v60 default `PNT_GROUP_CNT=48`) |
 | RTX 5070 × 2 (multi-GPU) | ~5.8 GKeys/s | Confirmed by user (Linux, experimental, v59) |
+| RTX 5060 Ti (Blackwell) | ~2.42 GKeys/s | Confirmed by user [#4](https://github.com/pscamillo/PSCKangaroo/issues/4) (Windows, PNT=32) |
 | RTX 2070 (Turing) | ~1.2 GKeys/s | Confirmed by user (Windows, v59) |
 | GTX 1060 (Pascal) | ~0.19 GKeys/s | Confirmed by user (Linux, v59) |
 
