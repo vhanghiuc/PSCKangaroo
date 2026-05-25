@@ -39,6 +39,20 @@
 #include "defs.h"
 
 // ============================================================================
+// PORTABILITY: 64-bit fseek/ftell
+// ============================================================================
+// fseek() takes 'long' which is 32-bit on Windows MSVC (LLP64 model).
+// For checkpoint files larger than ~2.15 GB, the byte offset would be
+// silently truncated, causing fread() to read from the wrong position.
+// FSEEK64 routes to _fseeki64 on Windows / fseeko on POSIX (both accept
+// 64-bit offsets). Reported by @MrX0r, issue #6.
+#ifdef _WIN32
+    #define FSEEK64 _fseeki64
+#else
+    #define FSEEK64 fseeko
+#endif
+
+// ============================================================================
 // CONFIGURATION
 // ============================================================================
 
@@ -137,9 +151,9 @@ private:
     std::atomic<u64> ww_buffer_hits{0};  // cross-type matches found
     int ww_buffer_pct;                   // % of RAM for W-W buffer (0=disabled)
     
-    u64 wild_table_size;      // Same size for both tables
-    u64 wild_table_mask;
-    u64 wild_slots_per_shard;
+    u64 wild_table_size = 0;      // Same size for both tables
+    u64 wild_table_mask = 0;
+    u64 wild_slots_per_shard = 0;
     
     // Per-table counters
     std::atomic<u64> wild_count[2];
@@ -147,8 +161,8 @@ private:
     
     // Spatial bucket tracking (combined stats)
     struct SpatialBucket {
-        u64 start_slot;
-        u64 slot_count;
+        u64 start_slot = 0;
+        u64 slot_count = 0;
         std::atomic<u64> write_index{0};
         std::atomic<u64> fill_count{0};
     };
@@ -176,10 +190,10 @@ private:
     // Collision data
     std::atomic<bool> has_collision{false};
     SpinLock collision_lock;
-    u8 collision_x[16];
-    u8 collision_dist1[24];
-    u8 collision_dist2[24];
-    int collision_type;
+    u8 collision_x[16] = {};
+    u8 collision_dist1[24] = {};
+    u8 collision_dist2[24] = {};
+    int collision_type = 0;
     
     bool initialized = false;
     bool wild_store_enabled = true;
@@ -1208,7 +1222,7 @@ public:
         
         // v56C: Skip table[0] only if it was saved
         if (header.tables_present & 1) {
-            fseek(fp, wild_table_size * sizeof(WildEntryCompact), SEEK_CUR);
+            FSEEK64(fp, (int64_t)wild_table_size * (int64_t)sizeof(WildEntryCompact), SEEK_CUR);
         }
         
         // Read table[1] — only if it was saved
@@ -1345,7 +1359,7 @@ public:
                 fread(wild_table[t], sizeof(WildEntryCompact), wild_table_size, fp);
             } else if (in_file && !wild_table[t]) {
                 // Table in file but NOT allocated → skip
-                fseek(fp, wild_table_size * sizeof(WildEntryCompact), SEEK_CUR);
+                FSEEK64(fp, (int64_t)wild_table_size * (int64_t)sizeof(WildEntryCompact), SEEK_CUR);
             }
             // If not in file: nothing to read, table stays zeroed
         }
