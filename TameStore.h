@@ -1356,7 +1356,14 @@ public:
             bool in_file = (header.tables_present >> t) & 1;
             if (in_file && wild_table[t]) {
                 // Table in file AND allocated → read
-                fread(wild_table[t], sizeof(WildEntryCompact), wild_table_size, fp);
+                // v61: validate full read to catch silent truncation/corruption
+                size_t read_count = fread(wild_table[t], sizeof(WildEntryCompact), wild_table_size, fp);
+                if (read_count != wild_table_size) {
+                    printf("ERROR: Incomplete read of wild_table[%d] (got %llu/%llu entries)\n",
+                           t, (unsigned long long)read_count, (unsigned long long)wild_table_size);
+                    fclose(fp);
+                    return false;
+                }
             } else if (in_file && !wild_table[t]) {
                 // Table in file but NOT allocated → skip
                 FSEEK64(fp, (int64_t)wild_table_size * (int64_t)sizeof(WildEntryCompact), SEEK_CUR);
@@ -1367,8 +1374,12 @@ public:
         // Load spatial bucket states
         for (u32 i = 0; i < SPATIAL_BUCKETS; i++) {
             u64 wi, fc;
-            fread(&wi, sizeof(u64), 1, fp);
-            fread(&fc, sizeof(u64), 1, fp);
+            // v61: validate both reads to catch silent truncation
+            if (fread(&wi, sizeof(u64), 1, fp) != 1 || fread(&fc, sizeof(u64), 1, fp) != 1) {
+                printf("ERROR: Incomplete read of spatial bucket %u state\n", i);
+                fclose(fp);
+                return false;
+            }
             spatial_buckets[i].write_index.store(wi);
             spatial_buckets[i].fill_count.store(fc);
         }
