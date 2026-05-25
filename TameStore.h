@@ -53,6 +53,44 @@
 #endif
 
 // ============================================================================
+// PORTABILITY: durable disk sync + atomic rename (v61)
+// ============================================================================
+// Used by SaveCheckpoint to implement the temp+fsync+rename pattern:
+// 1. Write to "<filename>.tmp"
+// 2. FSYNC to push file data + metadata to physical storage
+// 3. Atomic rename to "<filename>"
+// This ensures that a crash, power loss, or disk-full during save never
+// leaves the live checkpoint file in a half-written, corrupted state.
+// Worst case after a crash: the previous valid checkpoint is preserved,
+// and the .tmp file (possibly incomplete) is left for manual cleanup.
+#ifdef _WIN32
+    #include <io.h>
+    #include <windows.h>
+    // _commit flushes file data to disk; equivalent to fsync()
+    static inline int FSYNC_FILE(FILE* fp) {
+        if (fflush(fp) != 0) return -1;
+        return _commit(_fileno(fp));
+    }
+    // MoveFileEx with REPLACE_EXISTING + WRITE_THROUGH is atomic on NTFS
+    static inline int RENAME_ATOMIC(const char* oldpath, const char* newpath) {
+        return MoveFileExA(oldpath, newpath,
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? 0 : -1;
+    }
+#else
+    #include <unistd.h>
+    static inline int FSYNC_FILE(FILE* fp) {
+        if (fflush(fp) != 0) return -1;
+        return fsync(fileno(fp));
+    }
+    // POSIX rename(2) is atomic when source and destination are on the
+    // same filesystem (which is always true for checkpoint + checkpoint.tmp).
+    static inline int RENAME_ATOMIC(const char* oldpath, const char* newpath) {
+        return rename(oldpath, newpath);
+    }
+#endif
+
+// ============================================================================
 // CONFIGURATION
 // ============================================================================
 
@@ -1277,8 +1315,27 @@ public:
         if (!initialized || !wild_table[0]) return false;
         
         printf("\n*** SAVING CHECKPOINT v56C: %s ***\n", filename);
-        FILE* fp = fopen(filename, "wb");
-        if (!fp) return false;
+        
+        // v61: Atomic write pattern — write to temp, fsync, rename.
+        // Protects against crash/power-loss/disk-full mid-write leaving
+        // the live checkpoint corrupted. Worst case after crash: previous
+        // valid checkpoint preserved + .tmp file left for cleanup.
+        char tmp_path[1024];
+        snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", filename);
+        
+        FILE* fp = fopen(tmp_path, "wb");
+        if (!fp) {
+            printf("ERROR: cannot open %s for writing\n", tmp_path);
+            return false;
+        }
+        
+        // Helper lambda for clean abort on write failure
+        auto abort_save = [&](const char* reason) -> bool {
+            printf("ERROR: %s\n", reason);
+            fclose(fp);
+            remove(tmp_path);  // best-effort cleanup
+            return false;
+        };
         
         CheckpointHeader header;
         memset(&header, 0, sizeof(header));
@@ -1293,12 +1350,15 @@ public:
         header.circular_mode_w2 = circular_mode_active[1] ? 1 : 0;
         header.tables_present = (wild_table[0] ? 1 : 0) | (wild_table[1] ? 2 : 0);
         
-        fwrite(&header, sizeof(header), 1, fp);
+        if (fwrite(&header, sizeof(header), 1, fp) != 1)
+            return abort_save("failed to write checkpoint header");
         
         // v56C: Only write tables that are allocated (skip NULL → saves ~117GB in ALL-TAME)
         for (int t = 0; t < 2; t++) {
             if (wild_table[t]) {
-                fwrite(wild_table[t], sizeof(WildEntryCompact), wild_table_size, fp);
+                size_t written = fwrite(wild_table[t], sizeof(WildEntryCompact), wild_table_size, fp);
+                if (written != wild_table_size)
+                    return abort_save("failed to write wild_table data (disk full?)");
             }
             // NULL tables: simply not written (tables_present bitmask tells loader)
         }
@@ -1307,11 +1367,32 @@ public:
         for (u32 i = 0; i < SPATIAL_BUCKETS; i++) {
             u64 wi = spatial_buckets[i].write_index.load();
             u64 fc = spatial_buckets[i].fill_count.load();
-            fwrite(&wi, sizeof(u64), 1, fp);
-            fwrite(&fc, sizeof(u64), 1, fp);
+            if (fwrite(&wi, sizeof(u64), 1, fp) != 1 ||
+                fwrite(&fc, sizeof(u64), 1, fp) != 1) {
+                return abort_save("failed to write spatial bucket state");
+            }
         }
         
-        fclose(fp);
+        // v61: Force data to physical storage BEFORE rename. Without this,
+        // the rename publishes a file whose contents may still be in the
+        // kernel page cache — a crash here would leave a "valid" filename
+        // pointing at undefined contents.
+        if (FSYNC_FILE(fp) != 0)
+            return abort_save("fsync failed (disk error?)");
+        
+        if (fclose(fp) != 0) {
+            printf("ERROR: fclose failed on temp checkpoint\n");
+            remove(tmp_path);
+            return false;
+        }
+        
+        // v61: Atomic publish — the live checkpoint is replaced in one step.
+        // Any reader either sees the old file (intact) or the new file (complete).
+        if (RENAME_ATOMIC(tmp_path, filename) != 0) {
+            printf("ERROR: atomic rename %s -> %s failed\n", tmp_path, filename);
+            remove(tmp_path);
+            return false;
+        }
         
         // Show actual size saved
         size_t tables_written = (wild_table[0] ? 1 : 0) + (wild_table[1] ? 1 : 0);
