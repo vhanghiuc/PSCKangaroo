@@ -985,6 +985,19 @@ struct DBRec
 };
 #pragma pack(pop)
 
+// v61: Suggest optimal V45_PNT_GROUP_CNT for a given SM (CU) count.
+// Based on empirical benchmark data — see README "Per-GPU Tuning" section:
+//   <=36 CUs (RTX 5060 Ti class):  PNT=32 optimal
+//   ~48 CUs (RTX 5070):            PNT=48 optimal
+//   >=70 CUs (RTX 5070 Ti+):       PNT=24 optimal
+// Returns 0 if no recommendation (unknown GPU class).
+static int suggest_pnt_for_sm_count(int mpCnt)
+{
+    if (mpCnt <= 36) return 32;
+    if (mpCnt <= 56) return 48;
+    return 24;
+}
+
 void InitGpus()
 {
     GpuCnt = 0;
@@ -1022,6 +1035,13 @@ void InitGpus()
                i, deviceProp.name, ((float)(deviceProp.totalGlobalMem / (1024 * 1024))) / 1024.0f, 
                deviceProp.multiProcessorCount, deviceProp.major, deviceProp.minor, 
                deviceProp.pciBusID, deviceProp.l2CacheSize / 1024);
+
+        // v61: Hint optimal PNT_GROUP_CNT based on detected SM count
+        int suggested_pnt = suggest_pnt_for_sm_count(deviceProp.multiProcessorCount);
+        if (suggested_pnt != PNT_GROUP_CNT) {
+            printf("  PNT hint: %d CUs -> PNT_GROUP_CNT=%d recommended (currently compiled with %d). See README \"Per-GPU Tuning\".\r\n",
+                   deviceProp.multiProcessorCount, suggested_pnt, PNT_GROUP_CNT);
+        }
         
         if (deviceProp.major < 6)
         {
@@ -1039,8 +1059,9 @@ void InitGpus()
         GpuKangs[GpuCnt]->GroupCnt = gGroupCnt;  // Use configurable group count
         GpuCnt++;
     }
-    printf("GroupCnt: %d, Kangaroos per GPU: %d (%.1fx default)\r\n", 
-           gGroupCnt, 256 * gGroupCnt * 48, (double)gGroupCnt / 24.0);
+    // v61: Show actual compile-time config (kernel uses these, not -groups CLI)
+    printf("Compile-time config: PNT_GROUP_CNT=%d, OCCUPANCY=%d (edit V45_* in defs.h to change)\r\n",
+           PNT_GROUP_CNT, V45_OCCUPANCY);
     printf("Total GPUs for work: %d\r\n", GpuCnt);
 }
 
