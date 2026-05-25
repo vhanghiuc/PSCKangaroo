@@ -30,8 +30,9 @@ int RCGpuKang::CalcKangCnt()
 	} else {
 		Kparams.GroupCnt = V45_PNT_GROUP_CNT;
 		if (GroupCnt > 0 && GroupCnt != V45_PNT_GROUP_CNT) {
-			printf("Note: -groups %d ignored. Using compiled V45_PNT_GROUP_CNT=%d for max speed.\n", GroupCnt, V45_PNT_GROUP_CNT);
-			printf("      To change, edit V45_PNT_GROUP_CNT in defs.h and recompile.\n");
+			printf("Note: -groups %d is compile-time only. Using V45_PNT_GROUP_CNT=%d (defs.h).\n",
+			       GroupCnt, V45_PNT_GROUP_CNT);
+			printf("      To find the optimal value for your GPU, run: scripts/bench_psck.sh\n");
 		}
 	}
 	return Kparams.BlockSize * Kparams.GroupCnt * Kparams.BlockCnt;
