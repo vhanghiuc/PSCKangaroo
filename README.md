@@ -359,7 +359,16 @@ This gain came purely from re-tuning a constant — no algorithmic change. Other
 
 ## Changelog
 
-### v60.1 (current — Windows MSVC checkpoint fix)
+### v61 (current — quality of life + robustness)
+
+- **Item 1 — PNT hint based on detected SM count**: Runtime detection of GPU class via `multiProcessorCount` prints a recommendation when the compiled `V45_PNT_GROUP_CNT` doesn't match the empirical optimum for that hardware tier (≤ 36 CUs → 32, ~48 CUs → 48, ≥ 70 CUs → 24). Hint is informational only — no behavioral change. Helps new users pick a sensible starting point without running blind sweeps. Tier data sourced from [@Zreaptrix](https://github.com/Zreaptrix)'s benchmark contributions in [#4](https://github.com/pscamillo/PSCKangaroo/issues/4).
+- **Item 2 — fread() return validation**: All `fread()` calls in checkpoint load paths (`TameStore.h`, `utils.cpp`) now validate the returned byte count, catching silent truncation from disk errors or partial writes. Complements the v60.1 `fseek()` fix — together they cover both "wrong offset" and "incomplete read" failure modes.
+- **Item 3 — Atomic checkpoint write**: `SaveCheckpoint()` now uses the `temp+fsync+rename` pattern (`_commit` + `MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH)` on Windows, `fsync` + `rename(2)` on POSIX). Crash, power loss, or disk-full mid-save will no longer corrupt the live checkpoint — readers either see the previous valid file or the new one fully durable, never a half-written intermediate state.
+- **Item 4 — `-groups N` messaging**: Help text and runtime warning now direct users to `scripts/bench_psck.sh` to find the optimal PNT value for their GPU, instead of suggesting they edit `defs.h` and recompile. The flag itself remains compile-time only (kernel constraint: stack-allocated arrays sized by `PNT_GROUP_CNT` cannot be VLAs); runtime support remains under evaluation for a future release.
+
+End-to-end validated on Bitcoin Puzzle 70 with three modes (ALL-TAME, concurrent, ALL-WILD), all successfully recovering the known key `0x349B84B6431A6C4EF1`. Build is now `-Wall`-clean for the first time (four pre-existing `fread()` warnings eliminated by Item 2). CUDA kernel unchanged — no performance regression vs v60.1.
+
+### v60.1 (Windows MSVC checkpoint fix)
 - **Fixed: `fseek()` 64-bit overflow on Windows MSVC** for checkpoint files larger than ~2.15 GB. The two `fseek()` calls in `LoadWildsHybrid()` and `LoadCheckpoint()` were silently narrowing a `u64` byte offset to 32-bit `long` (LLP64 model), causing silent corruption on cross-mode checkpoint resume. Linux GCC was unaffected (LP64, `long` is 64-bit).
 - New `FSEEK64` macro routes to `_fseeki64` on Windows, `fseeko` on POSIX.
 - C26495-flagged member variables now initialized at declaration (silences MSVC static analyzer).
