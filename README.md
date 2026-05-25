@@ -359,7 +359,13 @@ This gain came purely from re-tuning a constant — no algorithmic change. Other
 
 ## Changelog
 
-### v60 (current — PNT_GROUP_CNT tuning)
+### v60.1 (current — Windows MSVC checkpoint fix)
+- **Fixed: `fseek()` 64-bit overflow on Windows MSVC** for checkpoint files larger than ~2.15 GB. The two `fseek()` calls in `LoadWildsHybrid()` and `LoadCheckpoint()` were silently narrowing a `u64` byte offset to 32-bit `long` (LLP64 model), causing silent corruption on cross-mode checkpoint resume. Linux GCC was unaffected (LP64, `long` is 64-bit).
+- New `FSEEK64` macro routes to `_fseeki64` on Windows, `fseeko` on POSIX.
+- C26495-flagged member variables now initialized at declaration (silences MSVC static analyzer).
+- Reported, analyzed, and fix proposed by [@MrX0r](https://github.com/MrX0r) in [#6](https://github.com/pscamillo/PSCKangaroo/issues/6).
+
+### v60 (PNT_GROUP_CNT tuning)
 - **Default `PNT_GROUP_CNT` raised from 24 to 48** after empirical sweep on RTX 5070 (Blackwell SM 12.0)
 - Speed: 2.62 → 3.33 GKeys/s sustained (+27%) with zero register spill
 - Gain comes from better batch inversion amortization, not microarchitectural tweaks
@@ -395,6 +401,11 @@ This gain came purely from re-tuning a constant — no algorithmic change. Other
 - **kTimesG** — Critical feedback on endomorphism/cheap point/XDP that led to the v57 cleanup.
 - **pscamillo** — Concurrent mode (v59), W-W buffer (v58), ALL-TAME mode, 16-byte compact entries, async BSGS resolver, checkpoint system, table freeze, `-ramlimit`, **PNT_GROUP_CNT empirical tuning (v60)**.
   - Tools / AI assistance: Anthropic Claude (pair-programming for design, debugging, documentation).
+
+**Community contributors:**
+
+- **[@MrX0r](https://github.com/MrX0r)** — `fseek()` 64-bit overflow bug report on Windows MSVC, with complete root-cause analysis and suggested fix ([#6](https://github.com/pscamillo/PSCKangaroo/issues/6), resolved in v60.1).
+- **[@Zreaptrix](https://github.com/Zreaptrix)** — Per-GPU tuning benchmark data for RTX 5060 Ti and RTX 5070 Ti (Aorus Master, Gigabyte OC) including GK/Watt efficiency analysis and CPU bottleneck observation in 100% WILD phase ([#4](https://github.com/pscamillo/PSCKangaroo/issues/4)).
 
 ## See also
 
